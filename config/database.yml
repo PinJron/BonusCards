@@ -15,17 +15,19 @@
 # gem "pg"
 #
 default: &default
-  adapter: postgresql
+  adapter: sqlite3
   encoding: unicode
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  username: bonuscards
-  password: <%= ENV['BonusCards_DATABASE_PASSWORD'] %>
+  # username: bonuscards
+  # password: <%= ENV['BonusCards_DATABASE_PASSWORD'] %>
 
 development:
   <<: *default
-  database: bonuscards_development
+  # database: bonuscards_development
+  database: bonuscards_development.sqlite3
+
 
   # The specified database role being used to connect to postgres.
   # To create additional roles in postgres see `$ createuser --help`.
@@ -59,7 +61,8 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: bonuscards_test
+  # database: bonuscards_test
+  database: bonuscards_test.sqlite3
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is
@@ -84,5 +87,5 @@ test:
 production:
   <<: *default
   database: bonuscards_production
-  username: conuscards
+  username: bonuscards
   password: <%= ENV["BONUSCARDS_DATABASE_PASSWORD"] %>
