@@ -1,43 +1,31 @@
 class ShopsController < ApplicationController
-  before_action :set_shop, only: %i[show update]
-  before_action :set_user, only: %i[buy]
+  # before_action :set_shop, only: %i[show update]
+  # before_action :set_user, only: %i[buy]
 
   def index
     @shops = Shop.all
-    render json: @shops
   end
 
-  def show
-    @shop = Shop.find(params[:id])
-  end
+  def show = shop
 
   def create
     candidate = Shop.find_by(name: shop_params[:attributes][:name])
+
     if candidate
       @errors = true
     else
-      @shop = Shop.create(shop_params[:attributes])
+      @shop = Shop.create!(shop_params[:attributes])
     end
   end
 
   def buy
-    Card.transaction do
-      @card = @user.cards.find_by(shop_id: params[:id])
+    card = user&.cards&.find_by(shop_id: params[:id])
 
-      return @errors = true unless @card
+    return @errors = true unless card
 
-      @card.lock!
-
-      if use_bonuses?
-        if negative_balance_enabled?
-          use_bonuses_negative_balance
-        else
-          use_bonuses
-        end
-      else
-        add_bonuses
-      end
-    end
+    @card, @amount_due = process_payment(
+      card, buy_params[:amount].ceil, buy_params[:use_bonuses]
+    )
   end
 
   def update
@@ -46,79 +34,65 @@ class ShopsController < ApplicationController
 
   private
 
-  def calculate_bonus(amount)
-    amount >= 100 ? (amount / 100).floor : 0
-  end
+  def process_payment(card, buy_ammount, use_bonuses)
+    return add_bonuses(card, buy_ammount) unless use_bonuses
 
-  def set_shop
-    @shop = Shop.find(params[:id])
-  end
+    return use_card_bonuses(card, buy_ammount) if card.bonuses >= buy_ammount
+    return add_bonuses(card, buy_ammount) unless user.negative_balance?
 
-  def shop_params
-    params.require(:data).permit(attributes: :name)
-  end
-
-  def negative_balance_enabled?
-    @user.negative_balance
-  end
-
-  def use_bonuses?
-    buy_params[:use_bonuses]
-  end
-
-  def all_cards_ballance
-    @user.cards.sum(:bonuses)
+    use_total_user_bonuses(card, buy_ammount)
   end
 
   def max_negative_balance
     Card.where(user_id: @user.id).where.not(id: @card.id).sum(:bonuses)
   end
 
-  def use_bonuses_negative_balance
-    max_avaible_bonuses = all_cards_ballance
-    max_neg_bal = max_negative_balance
+  def use_total_user_bonuses(card, buy_ammount)
+    user.with_lock do
+      user_balance = user.total_bonuses
 
-    if max_avaible_bonuses >= 0 && buy_ammount.ceil < max_avaible_bonuses
-      decrement_bonuses
-    elsif buy_ammount.ceil >= max_avaible_bonuses
-      @user.with_lock do 
-        @amount_due = buy_ammount.ceil - max_avaible_bonuses
-        @card.update(bonuses: -max_neg_bal)
-      end
+      calculate_bonuses_breakdown(user_balance, buy_ammount) in {
+        bonuses_used:, amount_due:
+      }
+
+      [card.decrement_bonuses!(bonuses_used), amount_due]
     end
   end
 
-  def use_bonuses_
-    if @card.bonuses >= buy_ammount.ceil
-      decrement_bonuses
-    else
-      @amount_due = buy_ammount.ceil - @card.bonuses
-      @card.update(bonuses: 0)
-    end
-  end
-
-  def decrement_bonuses
+  def use_card_bonuses(card, buy_ammount)
     card.with_lock do
-      @card.update(bonuses: @card.bonuses - buy_ammount.ceil)
+      card_balance = card.bonuses
+
+      calculate_bonuses_breakdown(card_balance, buy_ammount) in {
+        bonuses_used:, amount_due:
+      }
+
+      [card.decrement_bonuses!(bonuses_used), amount_due]
     end
-    @amount_due = 0
   end
 
-  def add_bonuses
-    bonuses = calculate_bonus(buy_ammount)
-    @card.update(bonuses: @card.bonuses + bonuses)
-    @amount_due = buy_ammount
+  def add_bonuses(card, buy_ammount)
+    bonuses = amount >= 100 ? (amount / 100).floor : 0
+
+    [card.increment_bonuses!(bonuses), buy_ammount]
   end
 
-  def buy_params
-    params.permit(:amount, :use_bonuses, :user_id)
+  def calculate_bonuses_breakdown(balance, buy_ammount)
+    bonuses_used =
+      if balance >= buy_ammount
+        balance - buy_ammount
+      else
+        balance
+      end
+
+    amount_due = buy_ammount - bonuses_used
+
+    { bonuses_used:, amount_due: }
   end
 
-  def set_user
-    @user = User.find(buy_params[:user_id])
-  end
+  def shop_params = params.require(:data).permit(attributes: :name)
+  def buy_params = params.permit(:amount, :use_bonuses, :user_id)
 
-  def buy_ammount
-    buy_params[:amount]
-  end
+  def shop = @shop ||= Shop.find(params[:id])
+  def user = @user ||= User.find(buy_params[:user_id])
 end
