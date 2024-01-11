@@ -1,7 +1,4 @@
 class ShopsController < ApplicationController
-  # before_action :set_shop, only: %i[show update]
-  # before_action :set_user, only: %i[buy]
-
   def index
     @shops = Shop.all
   end
