@@ -43,10 +43,6 @@ class ShopsController < ApplicationController
     use_total_user_bonuses(card, buy_ammount)
   end
 
-  def max_negative_balance
-    Card.where(user_id: @user.id).where.not(id: @card.id).sum(:bonuses)
-  end
-
   def use_total_user_bonuses(card, buy_ammount)
     user.with_lock do
       user_balance = user.total_bonuses
