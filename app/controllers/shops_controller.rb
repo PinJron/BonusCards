@@ -28,7 +28,15 @@ class ShopsController < ApplicationController
 
       @card.lock!
 
-      use_bonuses? ? use_bonuses : add_bonuses
+      if use_bonuses?
+        if negative_balance_enabled?
+          use_bonuses_negative_balance
+        else
+          use_bonuses
+        end
+      else
+        add_bonuses
+      end
     end
   end
 
@@ -50,18 +58,50 @@ class ShopsController < ApplicationController
     params.require(:data).permit(attributes: :name)
   end
 
+  def negative_balance_enabled?
+    @user.negative_balance
+  end
+
   def use_bonuses?
     buy_params[:use_bonuses]
   end
 
-  def use_bonuses
+  def all_cards_ballance
+    @user.cards.sum(:bonuses)
+  end
+
+  def max_negative_balance
+    Card.where(user_id: @user.id).where.not(id: @card.id).sum(:bonuses)
+  end
+
+  def use_bonuses_negative_balance
+    max_avaible_bonuses = all_cards_ballance
+    max_neg_bal = max_negative_balance
+
+    if max_avaible_bonuses >= 0 && buy_ammount.ceil < max_avaible_bonuses
+      decrement_bonuses
+    elsif buy_ammount.ceil >= max_avaible_bonuses
+      @user.with_lock do 
+        @amount_due = buy_ammount.ceil - max_avaible_bonuses
+        @card.update(bonuses: -max_neg_bal)
+      end
+    end
+  end
+
+  def use_bonuses_
     if @card.bonuses >= buy_ammount.ceil
-      @card.update(bonuses: @card.bonuses - buy_ammount.ceil)
-      @amount_due = 0
+      decrement_bonuses
     else
       @amount_due = buy_ammount.ceil - @card.bonuses
       @card.update(bonuses: 0)
     end
+  end
+
+  def decrement_bonuses
+    card.with_lock do
+      @card.update(bonuses: @card.bonuses - buy_ammount.ceil)
+    end
+    @amount_due = 0
   end
 
   def add_bonuses

@@ -13,15 +13,12 @@ class UsersController < ApplicationController
     if candidate
       @errors = true
     else
-      @user = User.create(user_params[:attributes])
+      @user = User.create_or_find_by(user_params[:attributes])
     end
   end
 
   def update
-    User.transaction do
-      @user.lock!
-      @errors = true unless @user.update(user_params[:attributes])
-    end
+    @errors = true unless @user.update(user_params[:attributes])
   end
 
   private
