@@ -17,16 +17,12 @@ class ShopsController < ApplicationController
 
   def buy
     card = user&.cards&.find_by(shop_id: params[:id])
-
     return @errors = true unless card
 
     buy_amount = buy_params[:amount].ceil
-
     return @errors = true if buy_amount <= 0
 
-    use_bonuses = buy_params[:use_bonuses]
-
-    process_payment(card, buy_amount, use_bonuses) in { card:, amount_due: }
+    process_payment(card, buy_amount, buy_params[:use_bonuses]) in { card:, amount_due: }
 
     @card = card
     @amount_due = amount_due
@@ -41,13 +37,14 @@ class ShopsController < ApplicationController
   def process_payment(card, buy_amount, use_bonuses)
     return add_bonuses(card, buy_amount) unless use_bonuses
 
-    return use_card_bonuses(card, buy_amount) if card.bonuses >= buy_amount
-    return add_bonuses(card, buy_amount) unless user.negative_balance?
-
-    use_total_user_bonuses(card, buy_amount)
+    if user.negative_balance?
+      preccess_negative_balance_payment(card, buy_amount)
+    else
+      precess_default_payment(card, buy_amount)
+    end
   end
 
-  def use_total_user_bonuses(card, buy_amount)
+  def preccess_negative_balance_payment(card, buy_amount)
     user.with_lock do
       user_balance = user.total_bonuses
 
@@ -60,20 +57,22 @@ class ShopsController < ApplicationController
     end
   end
 
-  def use_card_bonuses(card, buy_amount)
+  def precess_default_payment(card, buy_amount)
     card.with_lock do
       card_balance = card.bonuses
 
       calculate_bonuses_breakdown(card_balance, buy_amount) in {
-        bonuses_used:, amount_due:
+        bonuses_used:, amount_due:, real_money_used:
       }
+
       card.decrement!(:bonuses, bonuses_used)
+      add_bonuses(card, real_money_used) in card:
 
       { card:, amount_due: }
     end
   end
 
-  def add_bonuses(card, buy_amount)
+  def add_bonuses(card, amount)
     bonuses = amount >= 100 ? (amount / 100).floor : 0
     card.increment!(:bonuses, bonuses)
 
@@ -89,8 +88,9 @@ class ShopsController < ApplicationController
       end
 
     amount_due = buy_amount - bonuses_used
+    real_money_used = amount_due - bonuses_used
 
-    { bonuses_used:, amount_due: }
+    { bonuses_used:, amount_due:, real_money_used: }
   end
 
   def shop_params = params.require(:data).permit(attributes: :name)
